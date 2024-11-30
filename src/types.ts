@@ -66,9 +66,41 @@ export interface Job {
   dependencies: string[];
 }
 
-export interface JobWithContext extends Job {
-  workflow_id: string;
-  workflow_name: string;
-  pipeline_id: string;
+export interface JobsResponse {
+  next_page_token: string | null;
+  items: Job[];
+}
+
+// V1.1 API Types
+export interface JobAction {
+  index: number;
+  start_time: string;
+  name: string;
+  has_output: boolean;
+  output_url: string;
+  status: string;
+  timedout: boolean | null;
+}
+
+export interface JobStep {
+  name: string;
+  actions: JobAction[];
+}
+
+export interface JobDetail {
+  author_date: string;
   branch: string;
+  build_num: number;
+  build_url: string;
+  committer_date: string;
+  failed: boolean;
+  lifecycle: string;
+  outcome: string;
+  retries: number[];
+  retry_of: number | null;
+  ssh_disabled: boolean;
+  start_time: string;
+  status: string;
+  steps: JobStep[];
+  circle_yml?: any; // Added to match API response, but will be excluded from saved data
 }

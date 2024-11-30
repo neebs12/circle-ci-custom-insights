@@ -23,7 +23,7 @@ async function main() {
     // Initialize services
     const pipelinesService = new PipelinesService(API_TOKEN, ORG_SLUG, PROJECT_NAME);
     const workflowsService = new WorkflowsService(API_TOKEN);
-    const jobsService = new JobsService(API_TOKEN);
+    const jobsService = new JobsService(API_TOKEN, ORG_SLUG, PROJECT_NAME);
 
     // Example usage: fetch pipelines for the last 7 days with a maximum of 100 items
     const endDate = new Date();
