@@ -38,6 +38,10 @@ function getSecondToLastMessage(outputs: any[]): string | null {
   return null;
 }
 
+function stripAnsiCodes(str: string): string {
+  return str.replace(/\u001b\[\d+m/g, '');
+}
+
 function createClassification(message: string): string[] {
   // Split the message by \r\n
   const lines = message.split('\r\n');
@@ -45,10 +49,13 @@ function createClassification(message: string): string[] {
   // Work backwards through the array to find the first string that starts with a letter
   for (let i = lines.length - 1; i >= 0; i--) {
     const line = lines[i];
-    // Don't trim - check the actual first character
-    if (line && /^[a-zA-Z]/.test(line)) {
-      // Take the subarray from this point to the end
-      return lines.slice(i).filter(line => line !== '');
+    // Don't trim - check the actual first character after removing ANSI codes
+    const cleanLine = stripAnsiCodes(line);
+    if (cleanLine && /^[a-zA-Z]/.test(cleanLine)) {
+      // Take the subarray from this point to the end, strip ANSI codes from each line
+      return lines.slice(i)
+        .filter(line => line !== '')
+        .map(line => stripAnsiCodes(line));
     }
   }
   
