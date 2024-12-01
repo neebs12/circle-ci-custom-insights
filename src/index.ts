@@ -14,6 +14,10 @@ const API_TOKEN = process.env.API_TOKEN;
 const ORG_SLUG = process.env.ORG_SLUG;
 const PROJECT_NAME = process.env.PROJECT_NAME;
 
+// Optional environment variables with defaults
+const TIMEFRAME_DAYS = parseInt(process.env.TIMEFRAME_DAYS || '7', 10);
+const MAX_PIPELINES = parseInt(process.env.MAX_PIPELINES || '100', 10);
+
 async function main() {
   try {
     if (!API_TOKEN || !ORG_SLUG || !PROJECT_NAME) {
@@ -25,26 +29,26 @@ async function main() {
     const workflowsService = new WorkflowsService(API_TOKEN);
     const jobsService = new JobsService(API_TOKEN, ORG_SLUG, PROJECT_NAME);
 
-    // Example usage: fetch pipelines for the last 7 days with a maximum of 100 items
+    // Use environment variables for timeframe and max items
     const endDate = new Date();
     const startDate = new Date();
-    startDate.setDate(startDate.getDate() - 7);
+    startDate.setDate(startDate.getDate() - TIMEFRAME_DAYS);
 
     const options = {
       startDate,
       endDate,
-      maxItems: 100
+      maxItems: MAX_PIPELINES
     };
+
+    console.log(`Fetching pipelines for the last ${TIMEFRAME_DAYS} days (max ${MAX_PIPELINES} pipelines)`);
 
     // Fetch and save pipelines
     const pipelines = await pipelinesService.fetchAllPipelines(options);
     console.log(`Found ${pipelines.length} pipelines between ${startDate.toISOString()} and ${endDate.toISOString()}`);
     await pipelinesService.savePipelinesToFile(pipelines, 'pipelines.json');
     
-    // Create and display pipeline summaries
+    // Create pipeline summaries but don't display them
     const pipelineSummaries = pipelinesService.createPipelineSummaries(pipelines);
-    console.log('\nPipeline Summaries:');
-    console.log(JSON.stringify(pipelineSummaries, null, 2));
 
     // Fetch and save workflows
     console.log('\nFetching workflows...');

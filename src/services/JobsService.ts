@@ -1,17 +1,54 @@
 import axios, { AxiosResponse } from 'axios';
 import fs from 'fs/promises';
 import path from 'path';
-import { Job, JobsResponse, Workflow, JobDetail } from '../types';
+import { Job, JobsResponse, Workflow, JobDetail, JobOutputEntry, JobOutputError, JobStep, JobAction, RetryEntry } from '../types';
 
 export class JobsService {
   private readonly apiToken: string;
   private readonly orgSlug: string;
   private readonly projectName: string;
+  private readonly retryFile = path.join(process.cwd(), 'outputs', 'jobs', '_retry.json');
 
   constructor(apiToken: string, orgSlug: string, projectName: string) {
     this.apiToken = apiToken;
     this.orgSlug = orgSlug;
     this.projectName = projectName;
+  }
+
+  private async ensureDirectoryExists(dirPath: string): Promise<void> {
+    try {
+      await fs.access(dirPath);
+    } catch {
+      await fs.mkdir(dirPath, { recursive: true });
+    }
+  }
+
+  private async addToRetryFile(jobNumber: number, jobName: string): Promise<void> {
+    try {
+      let retryData = { entries: [] as RetryEntry[] };
+      
+      try {
+        const content = await fs.readFile(this.retryFile, 'utf-8');
+        retryData = JSON.parse(content);
+      } catch (error) {
+        // File doesn't exist or is invalid, use empty data
+      }
+
+      // Only add if not already present
+      if (!retryData.entries.some(entry => entry.id === jobNumber)) {
+        retryData.entries.push({
+          id: jobNumber,
+          retry_count: 0,
+          last_attempt: new Date().toISOString(),
+          job_name: jobName
+        });
+
+        await this.ensureDirectoryExists(path.dirname(this.retryFile));
+        await fs.writeFile(this.retryFile, JSON.stringify(retryData, null, 2));
+      }
+    } catch (error) {
+      console.error('Error adding to retry file:', error);
+    }
   }
 
   private async fetchJobsForWorkflow(workflow: Workflow): Promise<Job[]> {
@@ -33,6 +70,7 @@ export class JobsService {
   private async logFailedJob(job: Job, reason: string): Promise<void> {
     try {
       const logDir = path.join(process.cwd(), 'outputs');
+      await this.ensureDirectoryExists(logDir);
       const logPath = path.join(logDir, 'failed_job_fetches.log');
       
       const logEntry = `Job ID: ${job.id}, Job Number: ${job.job_number}, Time: ${new Date().toISOString()}, Reason: ${reason}\n`;
@@ -43,13 +81,67 @@ export class JobsService {
     }
   }
 
-  private async fetchJobDetail(jobNumber: number, jobName: string, job: Job): Promise<void> {
+  private async fetchJobOutput(outputUrl: string): Promise<JobOutputEntry[] | JobOutputError | null> {
     try {
-      if (!jobNumber) {
-        await this.logFailedJob(job, 'Job number is undefined');
-        return;
+      const response = await axios.get(outputUrl, {
+        headers: {
+          'Circle-Token': this.apiToken
+        }
+      });
+      return response.data;
+    } catch (error) {
+      if (axios.isAxiosError(error) && error.response?.status === 404) {
+        return { message: "Build not found" };
       }
+      console.error('Error fetching job output:', error);
+      return null;
+    }
+  }
 
+  private getSkipMessage(status: string): string {
+    switch (status) {
+      case 'success':
+        return "Skipped output due to action success";
+      case 'canceled':
+        return "Skipped output due to action being canceled";
+      default:
+        return `Skipped output due to action status: ${status}`;
+    }
+  }
+
+  private async processStepWithOutputs(step: JobStep): Promise<JobStep> {
+    const processedActions = await Promise.all(
+      step.actions.map(async (action) => {
+        if (action.has_output && action.output_url) {
+          // Skip output fetching for successful or canceled actions
+          if (action.status === 'success' || action.status === 'canceled') {
+            return {
+              ...action,
+              _output: { message: this.getSkipMessage(action.status) }
+            };
+          }
+          
+          // For other statuses (failed, timedout, etc.), fetch the full output
+          const output = await this.fetchJobOutput(action.output_url);
+          if (output) {
+            return {
+              ...action,
+              _output: output
+            };
+          }
+        }
+        return action;
+      })
+    );
+
+    return {
+      ...step,
+      actions: processedActions
+    };
+  }
+
+  public async retryJobDetail(jobNumber: number, jobName: string): Promise<void> {
+    try {
       const url = `https://circleci.com/api/v1.1/project/${this.orgSlug}/${this.projectName}/${jobNumber}`;
       const response: AxiosResponse<JobDetail> = await axios.get(url, {
         headers: {
@@ -57,21 +149,54 @@ export class JobsService {
         }
       });
 
-      // Ensure the jobs directory exists
-      const jobsDir = path.join(process.cwd(), 'outputs', 'jobs');
-      await fs.mkdir(jobsDir, { recursive: true });
-
       // Remove circle_yml from the response data
       const { circle_yml, ...jobDataWithoutCircleYml } = response.data;
+
+      // Process each step to fetch outputs for its actions
+      const processedSteps = await Promise.all(
+        response.data.steps.map(step => this.processStepWithOutputs(step))
+      );
+
+      const finalJobData = {
+        ...jobDataWithoutCircleYml,
+        steps: processedSteps
+      };
+
+      // Ensure the jobs directory exists
+      const jobsDir = path.join(process.cwd(), 'outputs', 'jobs');
+      await this.ensureDirectoryExists(jobsDir);
 
       // Save filtered response to file
       const filename = `${jobNumber}-${jobName.replace(/[^a-zA-Z0-9-_]/g, '_')}.json`;
       const filePath = path.join(jobsDir, filename);
-      await fs.writeFile(filePath, JSON.stringify(jobDataWithoutCircleYml, null, 2));
+      await fs.writeFile(filePath, JSON.stringify(finalJobData, null, 2));
 
     } catch (error) {
-      await this.logFailedJob(job, error instanceof Error ? error.message : 'Unknown error');
-      console.error(`Error fetching detail for job ${jobNumber}:`, error);
+      if (axios.isAxiosError(error) && error.response?.status === 429) {
+        throw error; // Re-throw rate limit errors to be handled by retry manager
+      }
+      console.error(`Error retrying job detail ${jobNumber}:`, error);
+      throw error;
+    }
+  }
+
+  private async fetchJobDetail(jobNumber: number, jobName: string, job: Job): Promise<void> {
+    try {
+      if (!jobNumber) {
+        await this.logFailedJob(job, 'Job number is undefined');
+        return;
+      }
+
+      await this.retryJobDetail(jobNumber, jobName);
+
+    } catch (error) {
+      if (axios.isAxiosError(error) && error.response?.status === 429) {
+        console.log(`Rate limit hit for job ${jobNumber}, adding to retry queue`);
+        await this.addToRetryFile(jobNumber, jobName);
+      } else {
+        await this.logFailedJob(job, error instanceof Error ? error.message : 'Unknown error');
+        console.error(`Error fetching detail for job ${jobNumber}:`, error);
+      }
     }
   }
 
@@ -97,8 +222,12 @@ export class JobsService {
         console.log(`Progress: ${completedWorkflows}/${workflows.length} workflows processed`);
       }
 
+      // Ensure outputs directory exists
+      const outputsDir = path.join(process.cwd(), 'outputs');
+      await this.ensureDirectoryExists(outputsDir);
+
       // Save jobs list to file
-      const jobsPath = path.join(process.cwd(), 'outputs', 'jobs.json');
+      const jobsPath = path.join(outputsDir, 'jobs.json');
       await fs.writeFile(jobsPath, JSON.stringify(allJobs, null, 2));
       console.log(`Job data saved to outputs/jobs.json`);
       console.log(`Total jobs fetched: ${allJobs.length}`);

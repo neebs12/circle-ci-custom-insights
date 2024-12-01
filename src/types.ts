@@ -72,6 +72,17 @@ export interface JobsResponse {
 }
 
 // V1.1 API Types
+export interface JobOutputEntry {
+  message: string;
+  time: string;
+  type: string;
+  truncated: boolean;
+}
+
+export interface JobOutputError {
+  message: string;
+}
+
 export interface JobAction {
   index: number;
   start_time: string;
@@ -80,6 +91,7 @@ export interface JobAction {
   output_url: string;
   status: string;
   timedout: boolean | null;
+  _output?: JobOutputEntry[] | JobOutputError;
 }
 
 export interface JobStep {
@@ -102,5 +114,17 @@ export interface JobDetail {
   start_time: string;
   status: string;
   steps: JobStep[];
-  circle_yml?: any; // Added to match API response, but will be excluded from saved data
+  circle_yml?: any;
+}
+
+// Retry tracking types
+export interface RetryEntry {
+  id: number;
+  retry_count: number;
+  last_attempt: string;
+  job_name?: string; // Optional, but helpful for debugging
+}
+
+export interface RetryData {
+  entries: RetryEntry[];
 }

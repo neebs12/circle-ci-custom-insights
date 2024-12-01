@@ -21,9 +21,11 @@ export class PipelinesService {
 
     const allPipelines: Pipeline[] = [];
     let nextPageToken: string | null = null;
+    let pageCount = 0;
     
     do {
       try {
+        pageCount++;
         const url: string = `https://circleci.com/api/v2/project/${this.orgSlug}/${this.projectName}/pipeline${nextPageToken ? `?page-token=${nextPageToken}` : ''}`;
         const response: AxiosResponse<CircleCIResponse> = await axios.get(url, {
           headers: {
@@ -40,16 +42,26 @@ export class PipelinesService {
         });
 
         allPipelines.push(...filteredItems);
+        console.log(`Progress: Page ${pageCount} - Found ${filteredItems.length} pipelines (Total: ${allPipelines.length}${options.maxItems ? `/${options.maxItems}` : ''})`);
+
+        // If next_page_token is null, log and break
+        if (!next_page_token) {
+          console.log('No more pages available (next_page_token is null)');
+          break;
+        }
+
         nextPageToken = next_page_token;
 
         // Check if we've reached the maximum desired items
         if (options.maxItems && allPipelines.length >= options.maxItems) {
+          console.log(`Reached maximum number of pipelines (${options.maxItems})`);
           allPipelines.splice(options.maxItems);
           break;
         }
 
-        // If we get an empty next_page_token or the last item is before our start date, stop paginating
-        if (!next_page_token || new Date(items[items.length - 1].created_at) < options.startDate) {
+        // If the last item is before our start date, stop paginating
+        if (new Date(items[items.length - 1].created_at) < options.startDate) {
+          console.log('Reached pipelines before start date, stopping pagination');
           break;
         }
 

@@ -7,6 +7,8 @@
     "test": "echo \"Error: no test specified\" && exit 1",
     "start": "npm run build && node dist/index.js",
     "start:dev": "ts-node ./src",
+    "start:clear": "ts-node ./src/clear-outputs.ts && npm run start",
+    "start:retry": "ts-node ./src/retry-job-details.ts",
     "build": "tsc"
   },
   "keywords": [],
