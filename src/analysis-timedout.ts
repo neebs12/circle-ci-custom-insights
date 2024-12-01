@@ -1,157 +1,10 @@
 import fs from 'fs/promises';
 import path from 'path';
-import { Job, JobDetail, TimeoutAnalysis, TimeoutAnalysisResult, TreeNode } from './types';
-
-interface StatusCount {
-  total: number;
-  [key: string]: number;  // For dynamic status counts
-}
-
-interface TestFeatureAnalysis {
-  [filename: string]: StatusCount;
-}
-
-async function ensureAnalysisDir(): Promise<string> {
-  const analysisDir = path.join(process.cwd(), 'outputs', 'analysis');
-  await fs.mkdir(analysisDir, { recursive: true });
-  return analysisDir;
-}
-
-async function clearAnalysisDir(analysisDir: string): Promise<void> {
-  try {
-    console.log('Clearing analysis directory...');
-    const files = await fs.readdir(analysisDir);
-    for (const file of files) {
-      await fs.unlink(path.join(analysisDir, file));
-    }
-    console.log('Analysis directory cleared');
-  } catch (error: any) {
-    // If directory doesn't exist or is already empty, continue
-    if (error?.code !== 'ENOENT') {
-      throw error;
-    }
-  }
-}
-
-async function logAnalysisError(message: string): Promise<void> {
-  const analysisDir = await ensureAnalysisDir();
-  const logPath = path.join(analysisDir, 'analysis.log');
-  const timestamp = new Date().toISOString();
-  await fs.appendFile(logPath, `${timestamp}: ${message}\n`);
-}
-
-function getSecondToLastMessage(outputs: any[]): string | null {
-  if (outputs && outputs.length >= 2) {
-    return outputs[outputs.length - 2].message;
-  }
-  return null;
-}
-
-function stripAnsiCodes(str: string): string {
-  return str.replace(/\u001b\[\d+m/g, '');
-}
-
-function getLeadingSpaces(str: string): number {
-  const match = str.match(/^(\s*)/);
-  return match ? match[1].length : 0;
-}
-
-function processClassification(lines: string[]): string[] {
-  if (lines.length === 0) return [];
-
-  const result: string[] = [lines[0]]; // Always keep the first line
-
-  // Process remaining lines
-  for (let i = 1; i < lines.length; i++) {
-    const currentLine = lines[i];
-    const currentSpaces = getLeadingSpaces(currentLine);
-    
-    // Check if there's any later line with >= 2 spaces AND <= current spaces
-    let shouldRemove = false;
-    for (let j = i + 1; j < lines.length; j++) {
-      const laterSpaces = getLeadingSpaces(lines[j]);
-      if (laterSpaces >= 2 && laterSpaces <= currentSpaces) {
-        shouldRemove = true;
-        break;
-      }
-    }
-    
-    // Keep the line only if we didn't find a reason to remove it
-    if (!shouldRemove) {
-      result.push(currentLine);
-    }
-  }
-
-  return result;
-}
-
-interface ClassificationResult {
-  unprocessed: string[];
-  processed: string[];
-}
-
-function createClassification(message: string): ClassificationResult {
-  // Split the message by \r\n
-  const lines = message.split('\r\n');
-  
-  // Work backwards through the array to find the first string that starts with a letter
-  for (let i = lines.length - 1; i >= 0; i--) {
-    const line = lines[i];
-    // Don't trim - check the actual first character after removing ANSI codes
-    const cleanLine = stripAnsiCodes(line);
-    if (cleanLine && /^[a-zA-Z]/.test(cleanLine)) {
-      // Get the unprocessed array (with ANSI codes)
-      const unprocessed = lines.slice(i).filter(line => line !== '');
-      // Get the processed array (ANSI codes stripped and classification processed)
-      const stripped = unprocessed.map(line => stripAnsiCodes(line));
-      const processed = processClassification(stripped);
-      
-      return {
-        unprocessed,
-        processed
-      };
-    }
-  }
-  
-  return {
-    unprocessed: [],
-    processed: []
-  };
-}
-
-function buildTree(entries: TimeoutAnalysis[]): { [key: string]: TreeNode } {
-  const tree: { [key: string]: TreeNode } = {};
-
-  for (const entry of entries) {
-    const classification = entry.classification;
-    if (classification.length === 0) continue;
-
-    // First element is always the head node
-    const headNode = classification[0];
-    if (!tree[headNode]) {
-      tree[headNode] = { count: 0, children: {} };
-    }
-    tree[headNode].count++;
-
-    // Rest of the elements are branches under that head
-    let currentNode = tree[headNode].children;
-    for (let i = 1; i < classification.length; i++) {
-      const branch = classification[i];
-      if (!currentNode[branch]) {
-        currentNode[branch] = { count: 0, children: {} };
-      }
-      currentNode[branch].count++;
-      currentNode = currentNode[branch].children;
-    }
-  }
-
-  return tree;
-}
-
-function getBaseFilename(filename: string): string {
-  // Remove the job number prefix (everything before and including the first hyphen)
-  return filename.replace(/^\d+-/, '');
-}
+import { Job, JobDetail, TimeoutAnalysis, TimeoutAnalysisResult, TestFeatureAnalysis } from './types';
+import { createClassification, getSecondToLastMessage } from './analysis-scripts/classification';
+import { buildTree } from './analysis-scripts/tree-builder';
+import { updateTestFeatureAnalysis, logTestFeatureAnalysis } from './analysis-scripts/test-features';
+import { ensureAnalysisDir, clearAnalysisDir, logAnalysisError, saveAnalysisResult } from './analysis-scripts/fs-utils';
 
 async function analyzeTimeouts(): Promise<void> {
   try {
@@ -218,20 +71,8 @@ async function analyzeTimeouts(): Promise<void> {
         const jobDetailData = await fs.readFile(jobDetailPath, 'utf-8');
         const jobDetail: JobDetail = JSON.parse(jobDetailData);
 
-        // Track test_features jobs
-        if (jobFileName.match(/.*test_features\.json$/)) {
-          const baseFilename = getBaseFilename(jobFileName);
-          if (!testFeatureAnalysis[baseFilename]) {
-            testFeatureAnalysis[baseFilename] = { total: 0 };
-          }
-          testFeatureAnalysis[baseFilename].total++;
-          
-          const status = jobDetail.status;
-          if (!testFeatureAnalysis[baseFilename][status]) {
-            testFeatureAnalysis[baseFilename][status] = 0;
-          }
-          testFeatureAnalysis[baseFilename][status]++;
-        }
+        // Update test_features analysis
+        updateTestFeatureAnalysis(testFeatureAnalysis, jobFileName, jobDetail);
 
         // Find the workflow for this job
         const workflow = workflows.find((w: any) => w.id === job.id.split('/')[0]);
@@ -270,12 +111,11 @@ async function analyzeTimeouts(): Promise<void> {
 
     // First, save just the entries
     console.log('Saving entries...');
-    const analysisPath = path.join(analysisDir, 'timedout.json');
-    await fs.writeFile(analysisPath, JSON.stringify({ entries: timeoutEntries }, null, 2));
+    await saveAnalysisResult(analysisDir, 'timedout.json', { entries: timeoutEntries });
     console.log('Entries saved, building tree...');
 
     // Read the file back
-    const savedData = JSON.parse(await fs.readFile(analysisPath, 'utf-8'));
+    const savedData = JSON.parse(await fs.readFile(path.join(analysisDir, 'timedout.json'), 'utf-8'));
     
     // Build the tree
     console.log('Building classification tree...');
@@ -287,7 +127,7 @@ async function analyzeTimeouts(): Promise<void> {
       entries: savedData.entries,
       tree: tree
     };
-    await fs.writeFile(analysisPath, JSON.stringify(completeResult, null, 2));
+    await saveAnalysisResult(analysisDir, 'timedout.json', completeResult);
 
     console.log('\nAnalysis complete:');
     console.log(`- Total jobs: ${jobs.length}`);
@@ -295,16 +135,8 @@ async function analyzeTimeouts(): Promise<void> {
     console.log(`- Skipped/Failed: ${skippedJobs}`);
     console.log(`- Found ${timeoutEntries.length} timed out actions`);
 
-    console.log('\nAnalysis of test_features jobs:');
-    Object.entries(testFeatureAnalysis).forEach(([filename, counts]) => {
-      console.log(`- ${filename}`);
-      console.log(`  - Total: ${counts.total}`);
-      Object.entries(counts).forEach(([status, count]) => {
-        if (status !== 'total') {
-          console.log(`  - ${status}: ${count}`);
-        }
-      });
-    });
+    // Log test_features analysis
+    logTestFeatureAnalysis(testFeatureAnalysis);
 
     console.log('\nResults saved to outputs/analysis/timedout.json');
 

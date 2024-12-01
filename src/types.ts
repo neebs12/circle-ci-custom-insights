@@ -152,3 +152,19 @@ export interface TimeoutAnalysisResult {
   entries: TimeoutAnalysis[];
   tree: { [key: string]: TreeNode };
 }
+
+// Classification types
+export interface ClassificationResult {
+  unprocessed: string[];
+  processed: string[];
+}
+
+// Test Features Analysis types
+export interface StatusCount {
+  total: number;
+  [key: string]: number;  // For dynamic status counts
+}
+
+export interface TestFeatureAnalysis {
+  [filename: string]: StatusCount;
+}
