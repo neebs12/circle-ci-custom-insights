@@ -8,11 +8,14 @@ export class JobsService {
   private readonly orgSlug: string;
   private readonly projectName: string;
   private readonly retryFile = path.join(process.cwd(), 'outputs', 'jobs', '_retry.json');
+  private readonly batchSize: number;
 
   constructor(apiToken: string, orgSlug: string, projectName: string) {
     this.apiToken = apiToken;
     this.orgSlug = orgSlug;
     this.projectName = projectName;
+    // Get batch size from environment variable or use default
+    this.batchSize = parseInt(process.env.BATCH_SIZE || '5', 10);
   }
 
   private async ensureDirectoryExists(dirPath: string): Promise<void> {
@@ -207,10 +210,9 @@ export class JobsService {
       const allJobs: Job[] = [];
       let completedWorkflows = 0;
 
-      // Process workflows in batches to avoid overwhelming the API
-      const batchSize = 5;
-      for (let i = 0; i < workflows.length; i += batchSize) {
-        const batch = workflows.slice(i, i + batchSize);
+      // Process workflows in batches using configurable batch size
+      for (let i = 0; i < workflows.length; i += this.batchSize) {
+        const batch = workflows.slice(i, i + this.batchSize);
         const jobPromises = batch.map(workflow => 
           this.fetchJobsForWorkflow(workflow)
         );
@@ -236,9 +238,9 @@ export class JobsService {
       console.log('\nFetching detailed job information...');
       let completedJobs = 0;
       
-      // Process jobs in batches
-      for (let i = 0; i < allJobs.length; i += batchSize) {
-        const batch = allJobs.slice(i, i + batchSize);
+      // Process jobs in batches using configurable batch size
+      for (let i = 0; i < allJobs.length; i += this.batchSize) {
+        const batch = allJobs.slice(i, i + this.batchSize);
         const detailPromises = batch.map(job => 
           this.fetchJobDetail(job.job_number, job.name, job)
         );

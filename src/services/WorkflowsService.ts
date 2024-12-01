@@ -5,9 +5,12 @@ import { Pipeline, Workflow, WorkflowResponse } from '../types';
 
 export class WorkflowsService {
   private readonly apiToken: string;
+  private readonly batchSize: number;
 
   constructor(apiToken: string) {
     this.apiToken = apiToken;
+    // Get batch size from environment variable or use default
+    this.batchSize = parseInt(process.env.BATCH_SIZE || '5', 10);
   }
 
   private async fetchWorkflowsForPipeline(pipelineId: string, branch: string): Promise<Workflow[]> {
@@ -32,15 +35,14 @@ export class WorkflowsService {
 
   async fetchAllWorkflows(pipelines: Pipeline[]): Promise<void> {
     try {
-      console.log(`Fetching workflows for ${pipelines.length} pipelines...`);
+      console.log(`Fetching workflows for ${pipelines.length} pipelines (batch size: ${this.batchSize})...`);
 
       const allWorkflows: Workflow[] = [];
       let completedPipelines = 0;
 
-      // Process pipelines in batches to avoid overwhelming the API
-      const batchSize = 5;
-      for (let i = 0; i < pipelines.length; i += batchSize) {
-        const batch = pipelines.slice(i, i + batchSize);
+      // Process pipelines in batches using configurable batch size
+      for (let i = 0; i < pipelines.length; i += this.batchSize) {
+        const batch = pipelines.slice(i, i + this.batchSize);
         const workflowPromises = batch.map(pipeline => 
           this.fetchWorkflowsForPipeline(pipeline.id, pipeline.vcs?.branch || '')
         );
