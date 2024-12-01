@@ -122,9 +122,31 @@ export interface RetryEntry {
   id: number;
   retry_count: number;
   last_attempt: string;
-  job_name?: string; // Optional, but helpful for debugging
+  job_name?: string;
 }
 
 export interface RetryData {
   entries: RetryEntry[];
+}
+
+// Analysis types
+export interface TimeoutAnalysis {
+  start_time: string;
+  workflow_id: string;
+  branch: string;
+  job_id: string;
+  job_name: string;
+  index: number;
+  message: string;
+  classification: string[];
+}
+
+export interface TreeNode {
+  count: number;
+  children: { [key: string]: TreeNode };
+}
+
+export interface TimeoutAnalysisResult {
+  entries: TimeoutAnalysis[];
+  tree: { [key: string]: TreeNode };
 }

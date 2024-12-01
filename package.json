@@ -9,6 +9,7 @@
     "start:dev": "ts-node ./src",
     "start:clear": "ts-node ./src/clear-outputs.ts && npm run start",
     "start:retry": "ts-node ./src/retry-job-details.ts",
+    "start:analysis:timedout": "ts-node ./src/analysis-timedout.ts",
     "build": "tsc"
   },
   "keywords": [],
