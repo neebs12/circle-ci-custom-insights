@@ -5,6 +5,7 @@ import { createClassification, getSecondToLastMessage } from './analysis-scripts
 import { buildTree } from './analysis-scripts/tree-builder';
 import { updateTestFeatureAnalysis, logTestFeatureAnalysis } from './analysis-scripts/test-features';
 import { ensureAnalysisDir, clearAnalysisDir, logAnalysisError, saveAnalysisResult } from './analysis-scripts/fs-utils';
+import { generateTreeYaml } from './analysis-scripts/yaml-generator';
 
 async function analyzeTimeouts(): Promise<void> {
   try {
@@ -129,6 +130,10 @@ async function analyzeTimeouts(): Promise<void> {
     };
     await saveAnalysisResult(analysisDir, 'timedout.json', completeResult);
 
+    // Generate YAML from tree
+    console.log('Generating tree YAML...');
+    await generateTreeYaml(analysisDir, completeResult);
+
     console.log('\nAnalysis complete:');
     console.log(`- Total jobs: ${jobs.length}`);
     console.log(`- Successfully processed: ${processedJobs}`);
@@ -138,7 +143,9 @@ async function analyzeTimeouts(): Promise<void> {
     // Log test_features analysis
     logTestFeatureAnalysis(testFeatureAnalysis);
 
-    console.log('\nResults saved to outputs/analysis/timedout.json');
+    console.log('\nResults saved to:');
+    console.log('- outputs/analysis/timedout.json');
+    console.log('- outputs/analysis/timedout-tree.yaml');
 
   } catch (error) {
     console.error('Analysis failed:', error);

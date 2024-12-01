@@ -145,7 +145,8 @@ export interface TimeoutAnalysis {
 
 export interface TreeNode {
   count: number;
-  children: { [key: string]: TreeNode };
+  children?: { [key: string]: TreeNode };
+  is_test?: boolean;
 }
 
 export interface TimeoutAnalysisResult {
