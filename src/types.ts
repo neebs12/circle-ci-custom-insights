@@ -138,7 +138,9 @@ export interface TimeoutAnalysis {
   job_name: string;
   index: number;
   message: string;
+  unprocessed_classification: string[];
   classification: string[];
+  build_url: string;
 }
 
 export interface TreeNode {

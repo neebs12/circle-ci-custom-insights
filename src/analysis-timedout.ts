@@ -42,7 +42,46 @@ function stripAnsiCodes(str: string): string {
   return str.replace(/\u001b\[\d+m/g, '');
 }
 
-function createClassification(message: string): string[] {
+function getLeadingSpaces(str: string): number {
+  const match = str.match(/^(\s*)/);
+  return match ? match[1].length : 0;
+}
+
+function processClassification(lines: string[]): string[] {
+  if (lines.length === 0) return [];
+
+  const result: string[] = [lines[0]]; // Always keep the first line
+
+  // Process remaining lines
+  for (let i = 1; i < lines.length; i++) {
+    const currentLine = lines[i];
+    const currentSpaces = getLeadingSpaces(currentLine);
+    
+    // Check if there's any later line with >= 2 spaces AND <= current spaces
+    let shouldRemove = false;
+    for (let j = i + 1; j < lines.length; j++) {
+      const laterSpaces = getLeadingSpaces(lines[j]);
+      if (laterSpaces >= 2 && laterSpaces <= currentSpaces) {
+        shouldRemove = true;
+        break;
+      }
+    }
+    
+    // Keep the line only if we didn't find a reason to remove it
+    if (!shouldRemove) {
+      result.push(currentLine);
+    }
+  }
+
+  return result;
+}
+
+interface ClassificationResult {
+  unprocessed: string[];
+  processed: string[];
+}
+
+function createClassification(message: string): ClassificationResult {
   // Split the message by \r\n
   const lines = message.split('\r\n');
   
@@ -52,14 +91,23 @@ function createClassification(message: string): string[] {
     // Don't trim - check the actual first character after removing ANSI codes
     const cleanLine = stripAnsiCodes(line);
     if (cleanLine && /^[a-zA-Z]/.test(cleanLine)) {
-      // Take the subarray from this point to the end, strip ANSI codes from each line
-      return lines.slice(i)
-        .filter(line => line !== '')
-        .map(line => stripAnsiCodes(line));
+      // Get the unprocessed array (with ANSI codes)
+      const unprocessed = lines.slice(i).filter(line => line !== '');
+      // Get the processed array (ANSI codes stripped and classification processed)
+      const stripped = unprocessed.map(line => stripAnsiCodes(line));
+      const processed = processClassification(stripped);
+      
+      return {
+        unprocessed,
+        processed
+      };
     }
   }
   
-  return [];
+  return {
+    unprocessed: [],
+    processed: []
+  };
 }
 
 function buildTree(entries: TimeoutAnalysis[]): { [key: string]: TreeNode } {
@@ -163,6 +211,7 @@ async function analyzeTimeouts(): Promise<void> {
             if (action.timedout === true && action._output && Array.isArray(action._output)) {
               const message = getSecondToLastMessage(action._output);
               if (message) {
+                const classification = createClassification(message);
                 timeoutEntries.push({
                   start_time: action.start_time,
                   workflow_id: workflow?.id || 'unknown',
@@ -171,7 +220,9 @@ async function analyzeTimeouts(): Promise<void> {
                   job_name: job.name,
                   index: action.index,
                   message: message,
-                  classification: createClassification(message)
+                  unprocessed_classification: classification.unprocessed,
+                  classification: classification.processed,
+                  build_url: jobDetail.build_url
                 });
               }
             }
