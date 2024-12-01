@@ -2,6 +2,15 @@ import fs from 'fs/promises';
 import path from 'path';
 import { Job, JobDetail, TimeoutAnalysis, TimeoutAnalysisResult, TreeNode } from './types';
 
+interface StatusCount {
+  total: number;
+  [key: string]: number;  // For dynamic status counts
+}
+
+interface TestFeatureAnalysis {
+  [filename: string]: StatusCount;
+}
+
 async function ensureAnalysisDir(): Promise<string> {
   const analysisDir = path.join(process.cwd(), 'outputs', 'analysis');
   await fs.mkdir(analysisDir, { recursive: true });
@@ -139,6 +148,11 @@ function buildTree(entries: TimeoutAnalysis[]): { [key: string]: TreeNode } {
   return tree;
 }
 
+function getBaseFilename(filename: string): string {
+  // Remove the job number prefix (everything before and including the first hyphen)
+  return filename.replace(/^\d+-/, '');
+}
+
 async function analyzeTimeouts(): Promise<void> {
   try {
     console.log('Starting timeout analysis...');
@@ -165,6 +179,9 @@ async function analyzeTimeouts(): Promise<void> {
     let processedJobs = 0;
     let skippedJobs = 0;
     let lastProgressUpdate = 0;
+
+    // Track test_features analysis
+    const testFeatureAnalysis: TestFeatureAnalysis = {};
 
     // Process each job
     console.log('Processing jobs...');
@@ -200,6 +217,21 @@ async function analyzeTimeouts(): Promise<void> {
         // Read job detail file
         const jobDetailData = await fs.readFile(jobDetailPath, 'utf-8');
         const jobDetail: JobDetail = JSON.parse(jobDetailData);
+
+        // Track test_features jobs
+        if (jobFileName.match(/.*test_features\.json$/)) {
+          const baseFilename = getBaseFilename(jobFileName);
+          if (!testFeatureAnalysis[baseFilename]) {
+            testFeatureAnalysis[baseFilename] = { total: 0 };
+          }
+          testFeatureAnalysis[baseFilename].total++;
+          
+          const status = jobDetail.status;
+          if (!testFeatureAnalysis[baseFilename][status]) {
+            testFeatureAnalysis[baseFilename][status] = 0;
+          }
+          testFeatureAnalysis[baseFilename][status]++;
+        }
 
         // Find the workflow for this job
         const workflow = workflows.find((w: any) => w.id === job.id.split('/')[0]);
@@ -262,7 +294,19 @@ async function analyzeTimeouts(): Promise<void> {
     console.log(`- Successfully processed: ${processedJobs}`);
     console.log(`- Skipped/Failed: ${skippedJobs}`);
     console.log(`- Found ${timeoutEntries.length} timed out actions`);
-    console.log(`Results saved to outputs/analysis/timedout.json`);
+
+    console.log('\nAnalysis of test_features jobs:');
+    Object.entries(testFeatureAnalysis).forEach(([filename, counts]) => {
+      console.log(`- ${filename}`);
+      console.log(`  - Total: ${counts.total}`);
+      Object.entries(counts).forEach(([status, count]) => {
+        if (status !== 'total') {
+          console.log(`  - ${status}: ${count}`);
+        }
+      });
+    });
+
+    console.log('\nResults saved to outputs/analysis/timedout.json');
 
   } catch (error) {
     console.error('Analysis failed:', error);
