@@ -2,3 +2,5 @@ node_modules/
 dist/
 outputs/
 .env
+
+.DS_Store
