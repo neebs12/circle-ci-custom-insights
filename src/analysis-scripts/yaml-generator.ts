@@ -33,7 +33,8 @@ const sanitizeKeys = (obj: any): any => {
     
     if (obj !== null && typeof obj === 'object') {
         return Object.keys(obj).reduce((acc: Record<string, any>, key: string) => {
-            const sanitizedKey = key.trim().replace(/\s+/g, '_');
+            // Only trim leading/trailing whitespace, preserve spaces between words
+            const sanitizedKey = key.trim();
             acc[sanitizedKey] = sanitizeKeys(obj[key]);
             return acc;
         }, {});
@@ -85,7 +86,9 @@ const handlers: Handlers = {
             }
             if (!(inArray && i === 0))
                 output += `\n${indentLevel}`;
-            output += `${k}: ${handler(val)}`;
+            // Quote keys that contain spaces
+            const key = k.includes(' ') ? JSON.stringify(k) : k;
+            output += `${key}: ${handler(val)}`;
         });
         indentLevel = indentLevel.replace(/ {2}/, "");
         return output;
