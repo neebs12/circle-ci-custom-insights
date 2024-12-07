@@ -5,9 +5,15 @@ export interface DataPoint {
     y: number;
 }
 
+export interface TypeFrequencyData {
+    type: string;
+    data: DataPoint[];
+}
+
 export interface ProcessedData {
     cumulativePoints: DataPoint[];
     frequencyPoints: DataPoint[];
+    typeFrequencyPoints: TypeFrequencyData[];
     stats: {
         totalTimeouts: number;
         startDate: Date;
@@ -15,6 +21,7 @@ export interface ProcessedData {
         daysCovered: number;
         averagePerDay: number;
         maxPerDay: number;
+        typeBreakdown: { [key: string]: number };
     };
 }
 
@@ -42,6 +49,29 @@ export function processTimeoutData(timeoutData: TimeoutAnalysisResult): Processe
         y: count
     }));
 
+    // Generate type-based frequency data
+    const typeFrequency: { [type: string]: { [date: string]: number } } = {};
+    const typeBreakdown: { [type: string]: number } = {};
+
+    sortedEntries.forEach(entry => {
+        const type = entry.classification[0] || 'Unknown';
+        const date = new Date(entry.start_time).toISOString().split('T')[0];
+
+        if (!typeFrequency[type]) {
+            typeFrequency[type] = {};
+        }
+        typeFrequency[type][date] = (typeFrequency[type][date] || 0) + 1;
+        typeBreakdown[type] = (typeBreakdown[type] || 0) + 1;
+    });
+
+    const typeFrequencyPoints = Object.entries(typeFrequency).map(([type, frequencies]) => ({
+        type,
+        data: Object.entries(frequencies).map(([date, count]) => ({
+            x: date,
+            y: count
+        }))
+    }));
+
     // Calculate statistics
     const startDate = new Date(sortedEntries[0].start_time);
     const endDate = new Date(sortedEntries[sortedEntries.length - 1].start_time);
@@ -50,13 +80,15 @@ export function processTimeoutData(timeoutData: TimeoutAnalysisResult): Processe
     return {
         cumulativePoints,
         frequencyPoints,
+        typeFrequencyPoints,
         stats: {
             totalTimeouts: timeoutData.entries.length,
             startDate,
             endDate,
             daysCovered,
             averagePerDay: timeoutData.entries.length / daysCovered,
-            maxPerDay: Math.max(...Object.values(dailyFrequency))
+            maxPerDay: Math.max(...Object.values(dailyFrequency)),
+            typeBreakdown
         }
     };
 }

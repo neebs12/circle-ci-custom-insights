@@ -1,6 +1,36 @@
 import { ProcessedData } from './data-processor';
 
+// Generate a color for each type
+function generateColors(count: number): string[] {
+    const colors = [
+        'rgb(255, 99, 132)',   // red
+        'rgb(54, 162, 235)',   // blue
+        'rgb(255, 206, 86)',   // yellow
+        'rgb(75, 192, 192)',   // teal
+        'rgb(153, 102, 255)',  // purple
+        'rgb(255, 159, 64)',   // orange
+        'rgb(199, 199, 199)'   // gray
+    ];
+
+    // If we need more colors than available, generate them
+    while (colors.length < count) {
+        const r = Math.floor(Math.random() * 255);
+        const g = Math.floor(Math.random() * 255);
+        const b = Math.floor(Math.random() * 255);
+        colors.push(`rgb(${r}, ${g}, ${b})`);
+    }
+
+    return colors;
+}
+
 export function generateHtmlTemplate(data: ProcessedData): string {
+    const colors = generateColors(data.typeFrequencyPoints.length);
+    const typeBreakdownHtml = Object.entries(data.stats.typeBreakdown)
+        .sort((a, b) => b[1] - a[1]) // Sort by count descending
+        .map(([type, count]) => `
+            <p>${type}: ${count} (${((count / data.stats.totalTimeouts) * 100).toFixed(1)}%)</p>
+        `).join('');
+
     return `
 <!DOCTYPE html>
 <html>
@@ -42,17 +72,35 @@ export function generateHtmlTemplate(data: ProcessedData): string {
             margin: 5px 0;
             color: #666;
         }
+        .stats-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+        }
+        .type-breakdown {
+            background-color: #fff;
+            padding: 15px;
+            border-radius: 4px;
+            border: 1px solid #e9ecef;
+        }
     </style>
 </head>
 <body>
     <div class="container">
         <h1>Timeout Analysis</h1>
-        <div class="stats">
-            <p>Total Timeouts: ${data.stats.totalTimeouts}</p>
-            <p>Date Range: ${data.stats.startDate.toLocaleDateString()} to ${data.stats.endDate.toLocaleDateString()}</p>
-            <p>Days Covered: ${data.stats.daysCovered}</p>
-            <p>Average Timeouts per Day: ${data.stats.averagePerDay.toFixed(2)}</p>
-            <p>Maximum Timeouts in a Day: ${data.stats.maxPerDay}</p>
+        <div class="stats-grid">
+            <div class="stats">
+                <h3>General Statistics</h3>
+                <p>Total Timeouts: ${data.stats.totalTimeouts}</p>
+                <p>Date Range: ${data.stats.startDate.toLocaleDateString()} to ${data.stats.endDate.toLocaleDateString()}</p>
+                <p>Days Covered: ${data.stats.daysCovered}</p>
+                <p>Average Timeouts per Day: ${data.stats.averagePerDay.toFixed(2)}</p>
+                <p>Maximum Timeouts in a Day: ${data.stats.maxPerDay}</p>
+            </div>
+            <div class="stats type-breakdown">
+                <h3>Timeout Type Breakdown</h3>
+                ${typeBreakdownHtml}
+            </div>
         </div>
 
         <div class="chart-container">
@@ -63,6 +111,11 @@ export function generateHtmlTemplate(data: ProcessedData): string {
         <div class="chart-container">
             <h2>Daily Timeout Frequency</h2>
             <canvas id="frequencyChart"></canvas>
+        </div>
+
+        <div class="chart-container">
+            <h2>Daily Timeout Frequency by Type</h2>
+            <canvas id="typeFrequencyChart"></canvas>
         </div>
     </div>
     <script>
@@ -160,6 +213,60 @@ export function generateHtmlTemplate(data: ProcessedData): string {
                         callbacks: {
                             label: function(context) {
                                 return \`Timeouts: \${context.parsed.y}\`;
+                            }
+                        }
+                    },
+                    legend: {
+                        position: 'top'
+                    }
+                }
+            }
+        });
+
+        // Type Frequency Chart
+        const ctxTypeFrequency = document.getElementById('typeFrequencyChart').getContext('2d');
+        new Chart(ctxTypeFrequency, {
+            type: 'bar',
+            data: {
+                datasets: ${JSON.stringify(data.typeFrequencyPoints.map((typeData, index) => ({
+                    label: typeData.type,
+                    data: typeData.data,
+                    backgroundColor: colors[index] + '80',  // Add transparency
+                    borderColor: colors[index],
+                    borderWidth: 1
+                })))}
+            },
+            options: {
+                responsive: true,
+                scales: {
+                    x: {
+                        type: 'time',
+                        time: {
+                            unit: 'day',
+                            displayFormats: {
+                                day: 'MMM D, YYYY'
+                            }
+                        },
+                        title: {
+                            display: true,
+                            text: 'Date'
+                        },
+                        stacked: true
+                    },
+                    y: {
+                        beginAtZero: true,
+                        stacked: true,
+                        title: {
+                            display: true,
+                            text: 'Number of Timeouts'
+                        }
+                    }
+                },
+                plugins: {
+                    tooltip: {
+                        callbacks: {
+                            label: function(context) {
+                                return \`\${context.dataset.label}: \${context.parsed.y}\`;
                             }
                         }
                     },
