@@ -22,7 +22,7 @@ export class PipelinesService {
     const allPipelines: Pipeline[] = [];
     let nextPageToken: string | null = null;
     let pageCount = 0;
-    
+
     do {
       try {
         pageCount++;
@@ -34,7 +34,7 @@ export class PipelinesService {
         });
 
         const { items, next_page_token }: CircleCIResponse = response.data;
-        
+
         // Filter items by date range
         const filteredItems = items.filter(pipeline => {
           const pipelineDate = new Date(pipeline.created_at);
@@ -42,7 +42,21 @@ export class PipelinesService {
         });
 
         allPipelines.push(...filteredItems);
-        console.log(`Progress: Page ${pageCount} - Found ${filteredItems.length} pipelines (Total: ${allPipelines.length}${options.maxItems ? `/${options.maxItems}` : ''})`);
+
+        // Calculate days ago for the most recent pipeline in this batch
+        let daysAgoInfo = '';
+        if (filteredItems.length > 0) {
+          const mostRecentDate = new Date(filteredItems[0].created_at);
+          const now = new Date();
+          const diffTime = Math.abs(now.getTime() - mostRecentDate.getTime());
+          const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
+          const diffHours = Math.floor((diffTime % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+          daysAgoInfo = diffDays > 0 ?
+            ` (${diffDays}d ${diffHours}h ago)` :
+            ` (${diffHours}h ago)`;
+        }
+
+        console.log(`Progress: Page ${pageCount} - Found ${filteredItems.length} pipelines (Total: ${allPipelines.length}${options.maxItems ? `/${options.maxItems}` : ''})${daysAgoInfo}`);
 
         // If next_page_token is null, log and break
         if (!next_page_token) {
