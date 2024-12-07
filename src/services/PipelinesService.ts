@@ -7,11 +7,13 @@ export class PipelinesService {
   private readonly apiToken: string;
   private readonly orgSlug: string;
   private readonly projectName: string;
+  private readonly outputPath: string;
 
   constructor(apiToken: string, orgSlug: string, projectName: string) {
     this.apiToken = apiToken;
     this.orgSlug = orgSlug;
     this.projectName = projectName;
+    this.outputPath = path.join(process.cwd(), 'outputs', 'pipelines.json');
   }
 
   async fetchAllPipelines(options: FetchOptions): Promise<Pipeline[]> {
@@ -22,6 +24,9 @@ export class PipelinesService {
     const allPipelines: Pipeline[] = [];
     let nextPageToken: string | null = null;
     let pageCount = 0;
+
+    // Initialize the output file with an empty array
+    await fs.writeFile(this.outputPath, JSON.stringify([], null, 2));
 
     do {
       try {
@@ -56,6 +61,9 @@ export class PipelinesService {
             ` (${diffHours}h ago)`;
         }
 
+        // Write the current state to file as backup
+        await fs.writeFile(this.outputPath, JSON.stringify(allPipelines, null, 2));
+
         console.log(`Progress: Page ${pageCount} - Found ${filteredItems.length} pipelines (Total: ${allPipelines.length}${options.maxItems ? `/${options.maxItems}` : ''})${daysAgoInfo}`);
 
         // If next_page_token is null, log and break
@@ -70,6 +78,8 @@ export class PipelinesService {
         if (options.maxItems && allPipelines.length >= options.maxItems) {
           console.log(`Reached maximum number of pipelines (${options.maxItems})`);
           allPipelines.splice(options.maxItems);
+          // Write final state after truncating
+          await fs.writeFile(this.outputPath, JSON.stringify(allPipelines, null, 2));
           break;
         }
 

@@ -8,12 +8,16 @@ export class JobsService {
   private readonly orgSlug: string;
   private readonly projectName: string;
   private readonly retryFile = path.join(process.cwd(), 'outputs', 'jobs', '_retry.json');
+  private readonly jobsPath: string;
+  private readonly jobsDir: string;
   private readonly batchSize: number;
 
   constructor(apiToken: string, orgSlug: string, projectName: string) {
     this.apiToken = apiToken;
     this.orgSlug = orgSlug;
     this.projectName = projectName;
+    this.jobsPath = path.join(process.cwd(), 'outputs', 'jobs.json');
+    this.jobsDir = path.join(process.cwd(), 'outputs', 'jobs');
     // Get batch size from environment variable or use default
     this.batchSize = parseInt(process.env.BATCH_SIZE || '5', 10);
   }
@@ -29,7 +33,7 @@ export class JobsService {
   private async addToRetryFile(jobNumber: number, jobName: string): Promise<void> {
     try {
       let retryData = { entries: [] as RetryEntry[] };
-      
+
       try {
         const content = await fs.readFile(this.retryFile, 'utf-8');
         retryData = JSON.parse(content);
@@ -75,9 +79,9 @@ export class JobsService {
       const logDir = path.join(process.cwd(), 'outputs');
       await this.ensureDirectoryExists(logDir);
       const logPath = path.join(logDir, 'failed_job_fetches.log');
-      
+
       const logEntry = `Job ID: ${job.id}, Job Number: ${job.job_number}, Time: ${new Date().toISOString()}, Reason: ${reason}\n`;
-      
+
       await fs.appendFile(logPath, logEntry);
     } catch (error) {
       console.error('Error logging failed job:', error);
@@ -123,7 +127,7 @@ export class JobsService {
               _output: { message: this.getSkipMessage(action.status) }
             };
           }
-          
+
           // For other statuses (failed, timedout, etc.), fetch the full output
           const output = await this.fetchJobOutput(action.output_url);
           if (output) {
@@ -166,12 +170,11 @@ export class JobsService {
       };
 
       // Ensure the jobs directory exists
-      const jobsDir = path.join(process.cwd(), 'outputs', 'jobs');
-      await this.ensureDirectoryExists(jobsDir);
+      await this.ensureDirectoryExists(this.jobsDir);
 
       // Save filtered response to file
       const filename = `${jobNumber}-${jobName.replace(/[^a-zA-Z0-9-_]/g, '_')}.json`;
-      const filePath = path.join(jobsDir, filename);
+      const filePath = path.join(this.jobsDir, filename);
       await fs.writeFile(filePath, JSON.stringify(finalJobData, null, 2));
 
     } catch (error) {
@@ -207,41 +210,43 @@ export class JobsService {
     try {
       console.log(`Fetching jobs for ${workflows.length} workflows...`);
 
+      // Initialize jobs.json with empty array
+      await this.ensureDirectoryExists(path.dirname(this.jobsPath));
+      await fs.writeFile(this.jobsPath, JSON.stringify([], null, 2));
+
       const allJobs: Job[] = [];
       let completedWorkflows = 0;
 
       // Process workflows in batches using configurable batch size
       for (let i = 0; i < workflows.length; i += this.batchSize) {
         const batch = workflows.slice(i, i + this.batchSize);
-        const jobPromises = batch.map(workflow => 
+        const jobPromises = batch.map(workflow =>
           this.fetchJobsForWorkflow(workflow)
         );
 
         const jobResults = await Promise.all(jobPromises);
-        jobResults.forEach(jobs => allJobs.push(...jobs));
+        const newJobs: Job[] = [];
+        jobResults.forEach(jobs => newJobs.push(...jobs));
+
+        // Add new jobs to the total and save current state
+        allJobs.push(...newJobs);
+        await fs.writeFile(this.jobsPath, JSON.stringify(allJobs, null, 2));
 
         completedWorkflows += batch.length;
-        console.log(`Progress: ${completedWorkflows}/${workflows.length} workflows processed`);
+        console.log(`Progress: ${completedWorkflows}/${workflows.length} workflows processed (${allJobs.length} jobs saved)`);
       }
 
-      // Ensure outputs directory exists
-      const outputsDir = path.join(process.cwd(), 'outputs');
-      await this.ensureDirectoryExists(outputsDir);
-
-      // Save jobs list to file
-      const jobsPath = path.join(outputsDir, 'jobs.json');
-      await fs.writeFile(jobsPath, JSON.stringify(allJobs, null, 2));
-      console.log(`Job data saved to outputs/jobs.json`);
-      console.log(`Total jobs fetched: ${allJobs.length}`);
+      // Ensure jobs directory exists for detailed information
+      await this.ensureDirectoryExists(this.jobsDir);
 
       // Fetch and save detailed job information
       console.log('\nFetching detailed job information...');
       let completedJobs = 0;
-      
+
       // Process jobs in batches using configurable batch size
       for (let i = 0; i < allJobs.length; i += this.batchSize) {
         const batch = allJobs.slice(i, i + this.batchSize);
-        const detailPromises = batch.map(job => 
+        const detailPromises = batch.map(job =>
           this.fetchJobDetail(job.job_number, job.name, job)
         );
 
