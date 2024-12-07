@@ -32,6 +32,7 @@ async function analyzeTimeouts(): Promise<void> {
     const timeoutEntries: TimeoutAnalysis[] = [];
     let processedJobs = 0;
     let skippedJobs = 0;
+    let flakeBusterJobs = 0;
     let lastProgressUpdate = 0;
 
     // Track test_features analysis
@@ -51,6 +52,12 @@ async function analyzeTimeouts(): Promise<void> {
       if (!job.job_number || !job.name) {
         await logAnalysisError(`Skipping job with missing data - ID: ${job.id}, Number: ${job.job_number}, Name: ${job.name}`);
         skippedJobs++;
+        continue;
+      }
+
+      // Skip jobs with flake_buster in the name
+      if (job.name.toLowerCase().includes('flake_buster')) {
+        flakeBusterJobs++;
         continue;
       }
 
@@ -117,7 +124,7 @@ async function analyzeTimeouts(): Promise<void> {
 
     // Read the file back
     const savedData = JSON.parse(await fs.readFile(path.join(analysisDir, 'timedout.json'), 'utf-8'));
-    
+
     // Build the tree
     console.log('Building classification tree...');
     const tree = buildTree(savedData.entries);
@@ -138,6 +145,7 @@ async function analyzeTimeouts(): Promise<void> {
     console.log(`- Total jobs: ${jobs.length}`);
     console.log(`- Successfully processed: ${processedJobs}`);
     console.log(`- Skipped/Failed: ${skippedJobs}`);
+    console.log(`- Flake Buster jobs excluded: ${flakeBusterJobs}`);
     console.log(`- Found ${timeoutEntries.length} timed out actions`);
 
     // Log test_features analysis
