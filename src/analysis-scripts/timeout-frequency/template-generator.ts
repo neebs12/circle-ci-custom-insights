@@ -23,12 +23,17 @@ function generateColors(count: number): string[] {
     return colors;
 }
 
+// Truncate text with ellipsis if it exceeds maxLength
+function truncateText(text: string, maxLength: number = 50): string {
+    return text.length > maxLength ? text.substring(0, maxLength) + '...' : text;
+}
+
 export function generateHtmlTemplate(data: ProcessedData): string {
     const colors = generateColors(data.typeFrequencyPoints.length);
     const typeBreakdownHtml = Object.entries(data.stats.typeBreakdown)
         .sort((a, b) => b[1] - a[1]) // Sort by count descending
         .map(([type, count]) => `
-            <p>${type}: ${count} (${((count / data.stats.totalTimeouts) * 100).toFixed(1)}%)</p>
+            <p>${truncateText(type)}: ${count} (${((count / data.stats.totalTimeouts) * 100).toFixed(1)}%)</p>
         `).join('');
 
     return `
@@ -179,7 +184,7 @@ export function generateHtmlTemplate(data: ProcessedData): string {
                 datasets: [{
                     label: 'Daily Timeouts',
                     data: ${JSON.stringify(data.frequencyPoints)},
-                    backgroundColor: 'rgba(255, 99, 132, 0.5)',
+                    backgroundColor: 'rgb(255, 99, 132)',
                     borderColor: 'rgb(255, 99, 132)',
                     borderWidth: 1
                 }]
@@ -229,9 +234,9 @@ export function generateHtmlTemplate(data: ProcessedData): string {
             type: 'bar',
             data: {
                 datasets: ${JSON.stringify(data.typeFrequencyPoints.map((typeData, index) => ({
-                    label: typeData.type,
+                    label: truncateText(typeData.type),
                     data: typeData.data,
-                    backgroundColor: colors[index] + '80',  // Add transparency
+                    backgroundColor: colors[index],
                     borderColor: colors[index],
                     borderWidth: 1
                 })))}
