@@ -1,37 +1,13 @@
 import { ProcessedData } from './data-processor';
-
-// Generate a color for each type
-function generateColors(count: number): string[] {
-    const colors = [
-        'rgb(255, 99, 132)',   // red
-        'rgb(54, 162, 235)',   // blue
-        'rgb(255, 206, 86)',   // yellow
-        'rgb(75, 192, 192)',   // teal
-        'rgb(153, 102, 255)',  // purple
-        'rgb(255, 159, 64)',   // orange
-        'rgb(199, 199, 199)'   // gray
-    ];
-
-    // If we need more colors than available, generate them
-    while (colors.length < count) {
-        const r = Math.floor(Math.random() * 255);
-        const g = Math.floor(Math.random() * 255);
-        const b = Math.floor(Math.random() * 255);
-        colors.push(`rgb(${r}, ${g}, ${b})`);
-    }
-
-    return colors;
-}
-
-// Truncate text with ellipsis if it exceeds maxLength
-function truncateText(text: string, maxLength: number = 50): string {
-    return text.length > maxLength ? text.substring(0, maxLength) + '...' : text;
-}
+import { styles } from './styles';
+import { generateColors, truncateText } from './utils';
+import { baseChartOptions } from './chart-config';
 
 export function generateHtmlTemplate(data: ProcessedData): string {
     const colors = generateColors(data.typeFrequencyPoints.length);
+
     const typeBreakdownHtml = Object.entries(data.stats.typeBreakdown)
-        .sort((a, b) => b[1] - a[1]) // Sort by count descending
+        .sort(([, a], [, b]) => b - a)
         .map(([type, count]) => `
             <p>${truncateText(type)}: ${count} (${((count / data.stats.totalTimeouts) * 100).toFixed(1)}%)</p>
         `).join('');
@@ -44,51 +20,7 @@ export function generateHtmlTemplate(data: ProcessedData): string {
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/moment"></script>
     <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-moment"></script>
-    <style>
-        .container {
-            width: 90%;
-            margin: 20px auto;
-            padding: 20px;
-            background-color: white;
-            border-radius: 8px;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-        }
-        .chart-container {
-            margin-bottom: 40px;
-        }
-        body {
-            font-family: Arial, sans-serif;
-            background-color: #f5f5f5;
-            margin: 0;
-            padding: 20px;
-        }
-        h1, h2 {
-            color: #333;
-            text-align: center;
-            margin-bottom: 30px;
-        }
-        .stats {
-            margin: 20px 0;
-            padding: 15px;
-            background-color: #f8f9fa;
-            border-radius: 4px;
-        }
-        .stats p {
-            margin: 5px 0;
-            color: #666;
-        }
-        .stats-grid {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 20px;
-        }
-        .type-breakdown {
-            background-color: #fff;
-            padding: 15px;
-            border-radius: 4px;
-            border: 1px solid #e9ecef;
-        }
-    </style>
+    <style>${styles}</style>
 </head>
 <body>
     <div class="container">
@@ -108,6 +40,16 @@ export function generateHtmlTemplate(data: ProcessedData): string {
             </div>
         </div>
 
+        <div class="timeframe-selector">
+            <select id="timeframeSelector" onchange="updateTimeframe()">
+                <option value="all">All Time</option>
+                <option value="3m">Last 3 Months</option>
+                <option value="6m">Last 6 Months</option>
+                <option value="9m">Last 9 Months</option>
+                <option value="1y">Last Year</option>
+            </select>
+        </div>
+
         <div class="chart-container">
             <h2>Cumulative Timeouts Over Time</h2>
             <canvas id="cumulativeChart"></canvas>
@@ -124,159 +66,149 @@ export function generateHtmlTemplate(data: ProcessedData): string {
         </div>
     </div>
     <script>
-        // Cumulative Chart
+        let cumulativeChart, frequencyChart, typeFrequencyChart;
+        const allData = {
+            cumulative: ${JSON.stringify(data.cumulativePoints)},
+            frequency: ${JSON.stringify(data.frequencyPoints)},
+            typeFrequency: ${JSON.stringify(data.typeFrequencyPoints.map((typeData, index) => ({
+                label: truncateText(typeData.type),
+                data: typeData.data,
+                backgroundColor: colors[index],
+                borderColor: colors[index],
+                borderWidth: 1
+            })))}
+        };
+
+        function filterDataByTimeframe(data, timeframe) {
+            const now = new Date();
+            let cutoffDate;
+
+            switch(timeframe) {
+                case '3m':
+                    cutoffDate = new Date(now.setMonth(now.getMonth() - 3));
+                    break;
+                case '6m':
+                    cutoffDate = new Date(now.setMonth(now.getMonth() - 6));
+                    break;
+                case '9m':
+                    cutoffDate = new Date(now.setMonth(now.getMonth() - 9));
+                    break;
+                case '1y':
+                    cutoffDate = new Date(now.setFullYear(now.getFullYear() - 1));
+                    break;
+                default:
+                    return data;
+            }
+
+            return data.filter(point => new Date(point.x) >= cutoffDate);
+        }
+
+        function updateTimeframe() {
+            const timeframe = document.getElementById('timeframeSelector').value;
+
+            // Update cumulative chart
+            const filteredCumulative = filterDataByTimeframe(allData.cumulative, timeframe);
+            cumulativeChart.data.datasets[0].data = filteredCumulative;
+            cumulativeChart.update();
+
+            // Update frequency chart
+            const filteredFrequency = filterDataByTimeframe(allData.frequency, timeframe);
+            frequencyChart.data.datasets[0].data = filteredFrequency;
+            frequencyChart.update();
+
+            // Update type frequency chart
+            typeFrequencyChart.data.datasets = allData.typeFrequency.map(dataset => ({
+                ...dataset,
+                data: filterDataByTimeframe(dataset.data, timeframe)
+            }));
+            typeFrequencyChart.update();
+        }
+
+        // Base chart options
+        const baseOptions = ${JSON.stringify(baseChartOptions)};
+
+        // Initialize Charts
         const ctxCumulative = document.getElementById('cumulativeChart').getContext('2d');
-        new Chart(ctxCumulative, {
+        cumulativeChart = new Chart(ctxCumulative, {
             type: 'line',
             data: {
                 datasets: [{
                     label: 'Cumulative Timeouts',
-                    data: ${JSON.stringify(data.cumulativePoints)},
+                    data: allData.cumulative,
                     borderColor: 'rgb(75, 192, 192)',
                     tension: 0.1,
                     fill: false
                 }]
             },
             options: {
-                responsive: true,
-                scales: {
-                    x: {
-                        type: 'time',
-                        time: {
-                            unit: 'day',
-                            displayFormats: {
-                                day: 'MMM D, YYYY'
-                            }
-                        },
-                        title: {
-                            display: true,
-                            text: 'Date'
-                        }
-                    },
-                    y: {
-                        beginAtZero: true,
-                        title: {
-                            display: true,
-                            text: 'Total Timeouts'
-                        }
-                    }
-                },
+                ...baseOptions,
                 plugins: {
+                    ...baseOptions.plugins,
                     tooltip: {
                         callbacks: {
                             label: function(context) {
                                 return \`Total Timeouts: \${context.parsed.y}\`;
                             }
                         }
-                    },
-                    legend: {
-                        position: 'top'
                     }
                 }
             }
         });
 
-        // Frequency Chart
         const ctxFrequency = document.getElementById('frequencyChart').getContext('2d');
-        new Chart(ctxFrequency, {
+        frequencyChart = new Chart(ctxFrequency, {
             type: 'bar',
             data: {
                 datasets: [{
                     label: 'Daily Timeouts',
-                    data: ${JSON.stringify(data.frequencyPoints)},
+                    data: allData.frequency,
                     backgroundColor: 'rgb(255, 99, 132)',
                     borderColor: 'rgb(255, 99, 132)',
                     borderWidth: 1
                 }]
             },
             options: {
-                responsive: true,
-                scales: {
-                    x: {
-                        type: 'time',
-                        time: {
-                            unit: 'day',
-                            displayFormats: {
-                                day: 'MMM D, YYYY'
-                            }
-                        },
-                        title: {
-                            display: true,
-                            text: 'Date'
-                        }
-                    },
-                    y: {
-                        beginAtZero: true,
-                        title: {
-                            display: true,
-                            text: 'Number of Timeouts'
-                        }
-                    }
-                },
+                ...baseOptions,
                 plugins: {
+                    ...baseOptions.plugins,
                     tooltip: {
                         callbacks: {
                             label: function(context) {
                                 return \`Timeouts: \${context.parsed.y}\`;
                             }
                         }
-                    },
-                    legend: {
-                        position: 'top'
                     }
                 }
             }
         });
 
-        // Type Frequency Chart
         const ctxTypeFrequency = document.getElementById('typeFrequencyChart').getContext('2d');
-        new Chart(ctxTypeFrequency, {
+        typeFrequencyChart = new Chart(ctxTypeFrequency, {
             type: 'bar',
             data: {
-                datasets: ${JSON.stringify(data.typeFrequencyPoints.map((typeData, index) => ({
-                    label: truncateText(typeData.type),
-                    data: typeData.data,
-                    backgroundColor: colors[index],
-                    borderColor: colors[index],
-                    borderWidth: 1
-                })))}
+                datasets: allData.typeFrequency
             },
             options: {
-                responsive: true,
+                ...baseOptions,
                 scales: {
+                    ...baseOptions.scales,
                     x: {
-                        type: 'time',
-                        time: {
-                            unit: 'day',
-                            displayFormats: {
-                                day: 'MMM D, YYYY'
-                            }
-                        },
-                        title: {
-                            display: true,
-                            text: 'Date'
-                        },
+                        ...baseOptions.scales.x,
                         stacked: true
                     },
                     y: {
-                        beginAtZero: true,
-                        stacked: true,
-                        title: {
-                            display: true,
-                            text: 'Number of Timeouts'
-                        }
+                        ...baseOptions.scales.y,
+                        stacked: true
                     }
                 },
                 plugins: {
+                    ...baseOptions.plugins,
                     tooltip: {
                         callbacks: {
                             label: function(context) {
                                 return \`\${context.dataset.label}: \${context.parsed.y}\`;
                             }
                         }
-                    },
-                    legend: {
-                        position: 'top'
                     }
                 }
             }
