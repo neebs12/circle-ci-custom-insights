@@ -53,15 +53,22 @@ export function processTimeoutData(timeoutData: TimeoutAnalysisResult): Processe
     const typeFrequency: { [type: string]: { [date: string]: number } } = {};
     const typeBreakdown: { [type: string]: number } = {};
 
+    // First, calculate total occurrences for each type
     sortedEntries.forEach(entry => {
         const type = entry.classification[0] || 'Unknown';
-        const date = new Date(entry.start_time).toISOString().split('T')[0];
-
-        if (!typeFrequency[type]) {
-            typeFrequency[type] = {};
-        }
-        typeFrequency[type][date] = (typeFrequency[type][date] || 0) + 1;
         typeBreakdown[type] = (typeBreakdown[type] || 0) + 1;
+    });
+
+    // Then, only process daily frequencies for types that occur 10 or more times
+    sortedEntries.forEach(entry => {
+        const type = entry.classification[0] || 'Unknown';
+        if (typeBreakdown[type] >= 10) {  // Only process if type occurs 10 or more times
+            const date = new Date(entry.start_time).toISOString().split('T')[0];
+            if (!typeFrequency[type]) {
+                typeFrequency[type] = {};
+            }
+            typeFrequency[type][date] = (typeFrequency[type][date] || 0) + 1;
+        }
     });
 
     const typeFrequencyPoints = Object.entries(typeFrequency).map(([type, frequencies]) => ({
