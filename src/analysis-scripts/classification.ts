@@ -18,7 +18,7 @@ function processClassification(lines: string[]): string[] {
   for (let i = 1; i < lines.length; i++) {
     const currentLine = lines[i];
     const currentSpaces = getLeadingSpaces(currentLine);
-    
+
     // Check if there's any later line with >= 2 spaces AND <= current spaces
     let shouldRemove = false;
     for (let j = i + 1; j < lines.length; j++) {
@@ -28,10 +28,15 @@ function processClassification(lines: string[]): string[] {
         break;
       }
     }
-    
+
     // Keep the line only if we didn't find a reason to remove it
     if (!shouldRemove) {
-      result.push(currentLine);
+      // If line contains "Randomized with seed", remove the numbers
+      if (currentLine.includes("Randomized with seed")) {
+        result.push(currentLine.replace(/\d+/, ''));
+      } else {
+        result.push(currentLine);
+      }
     }
   }
 
@@ -41,7 +46,7 @@ function processClassification(lines: string[]): string[] {
 export function createClassification(message: string): ClassificationResult {
   // Split the message by \r\n
   const lines = message.split('\r\n');
-  
+
   // Work backwards through the array to find the first string that starts with a letter
   for (let i = lines.length - 1; i >= 0; i--) {
     const line = lines[i];
@@ -53,14 +58,14 @@ export function createClassification(message: string): ClassificationResult {
       // Get the processed array (ANSI codes stripped and classification processed)
       const stripped = unprocessed.map(line => stripAnsiCodes(line));
       const processed = processClassification(stripped);
-      
+
       return {
         unprocessed,
         processed
       };
     }
   }
-  
+
   return {
     unprocessed: [],
     processed: []
