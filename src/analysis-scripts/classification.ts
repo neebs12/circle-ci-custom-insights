@@ -9,10 +9,18 @@ function getLeadingSpaces(str: string): number {
   return match ? match[1].length : 0;
 }
 
+function processLine(line: string): string {
+  // If line contains "Randomized with seed", remove the numbers
+  if (line.includes("Randomized with seed")) {
+    return line.replace(/Randomized with seed \d+/, 'Randomized with seed');
+  }
+  return line;
+}
+
 function processClassification(lines: string[]): string[] {
   if (lines.length === 0) return [];
 
-  const result: string[] = [lines[0]]; // Always keep the first line
+  const result: string[] = [processLine(lines[0])]; // Process the first line
 
   // Process remaining lines
   for (let i = 1; i < lines.length; i++) {
@@ -31,12 +39,7 @@ function processClassification(lines: string[]): string[] {
 
     // Keep the line only if we didn't find a reason to remove it
     if (!shouldRemove) {
-      // If line contains "Randomized with seed", remove the numbers
-      if (currentLine.includes("Randomized with seed")) {
-        result.push(currentLine.replace(/\d+/, ''));
-      } else {
-        result.push(currentLine);
-      }
+      result.push(processLine(currentLine));
     }
   }
 
