@@ -1,6 +1,6 @@
 # CircleCI Insights
 
-A tool for analyzing CircleCI pipeline timeouts through an ETL (Extract, Transform, Load) process, helping you understand and optimize your CI/CD pipeline performance.
+A tool for analyzing CircleCI pipeline timeouts.
 
 ## Setup
 
